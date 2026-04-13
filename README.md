@@ -4,6 +4,13 @@
 
 **Repository:** [github.com/feehabcore/thedigitalarchitect](https://github.com/feehabcore/thedigitalarchitect)
 
+## Download APK
+
+- **Latest APK (direct):** [Download thedigitalarchitect-latest-debug.apk](https://github.com/feehabcore/thedigitalarchitect/releases/latest/download/thedigitalarchitect-latest-debug.apk)
+- **All release assets:** [GitHub Releases](https://github.com/feehabcore/thedigitalarchitect/releases)
+
+For the direct link to work, attach an APK named **`thedigitalarchitect-latest-debug.apk`** to your [latest GitHub Release](https://github.com/feehabcore/thedigitalarchitect/releases) (rename `app-debug.apk` from a local or [Actions](https://github.com/feehabcore/thedigitalarchitect/actions/workflows/android-apk.yml) build). Until a release exists, use **Releases** or **Actions → Artifacts**.
+
 ## Screenshots
 
 | Account setup | Home overview | Savings planner |
