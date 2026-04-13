@@ -1,5 +1,5 @@
 import * as React from 'react';
-import {ArrowLeft, Search, Trash2} from 'lucide-react';
+import {ArrowLeft, FileDown, Search, Trash2} from 'lucide-react';
 import {motion} from 'motion/react';
 import {cn} from '@/src/lib/utils';
 import {useApp} from '@/src/context/AppContext';
@@ -136,6 +136,33 @@ export default function Transactions({
           <p className="text-[10px] font-bold uppercase tracking-widest text-outline">In (month)</p>
           <p className="mt-1 text-lg font-extrabold text-emerald-400">{formatMoney(incMonth, cc)}</p>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <button
+          type="button"
+          onClick={() =>
+            void import('@/src/lib/statementPdf').then(({downloadTransactionStatementPdf}) =>
+              downloadTransactionStatementPdf(profile!, transactions, 'this_month'),
+            )
+          }
+          className="inline-flex touch-manipulation items-center justify-center gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container-low px-4 py-3 text-sm font-bold text-on-surface"
+        >
+          <FileDown className="h-4 w-4 text-primary" />
+          PDF statement (this month)
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            void import('@/src/lib/statementPdf').then(({downloadTransactionStatementPdf}) =>
+              downloadTransactionStatementPdf(profile!, transactions, 'all'),
+            )
+          }
+          className="inline-flex touch-manipulation items-center justify-center gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface-variant"
+        >
+          <FileDown className="h-4 w-4" />
+          PDF (all activity)
+        </button>
       </div>
 
       {groups.length === 0 ? (

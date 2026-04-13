@@ -20,6 +20,7 @@ function Shell() {
   const {profile} = useApp();
   const [currentScreen, setCurrentScreen] = React.useState<Screen>('home');
   const [addOpen, setAddOpen] = React.useState(false);
+  const [addInitialType, setAddInitialType] = React.useState<'income' | 'expense' | undefined>(undefined);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [focusTransactionId, setFocusTransactionId] = React.useState<string | null>(null);
 
@@ -30,7 +31,15 @@ function Shell() {
   const renderScreen = () => {
     switch (currentScreen) {
       case 'home':
-        return <Home onAddIncomeExpense={() => setAddOpen(true)} onViewTransactions={() => setCurrentScreen('transactions')} />;
+        return (
+          <Home
+            onAddIncomeExpense={(t) => {
+              setAddInitialType(t);
+              setAddOpen(true);
+            }}
+            onViewTransactions={() => setCurrentScreen('transactions')}
+          />
+        );
       case 'analytics':
         return <Analytics />;
       case 'savings':
@@ -40,14 +49,25 @@ function Shell() {
       case 'transactions':
         return (
           <Transactions
-            onAdd={() => setAddOpen(true)}
+            onAdd={() => {
+              setAddInitialType('expense');
+              setAddOpen(true);
+            }}
             onBack={() => setCurrentScreen('home')}
             focusTransactionId={focusTransactionId}
             onConsumedFocus={() => setFocusTransactionId(null)}
           />
         );
       default:
-        return <Home onAddIncomeExpense={() => setAddOpen(true)} onViewTransactions={() => setCurrentScreen('transactions')} />;
+        return (
+          <Home
+            onAddIncomeExpense={(t) => {
+              setAddInitialType(t);
+              setAddOpen(true);
+            }}
+            onViewTransactions={() => setCurrentScreen('transactions')}
+          />
+        );
     }
   };
 
@@ -57,12 +77,22 @@ function Shell() {
         currentScreen={currentScreen}
         onScreenChange={setCurrentScreen}
         addSheetOpen={addOpen}
-        onOpenAdd={() => setAddOpen(true)}
+        onOpenAdd={() => {
+          setAddInitialType('expense');
+          setAddOpen(true);
+        }}
         onOpenSearch={() => setSearchOpen(true)}
       >
         {renderScreen()}
       </Layout>
-      <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} />
+      <AddTransactionSheet
+        open={addOpen}
+        initialType={addInitialType}
+        onClose={() => {
+          setAddOpen(false);
+          setAddInitialType(undefined);
+        }}
+      />
       <GlobalSearchSheet
         open={searchOpen}
         onClose={() => setSearchOpen(false)}

@@ -1,18 +1,30 @@
 import * as React from 'react';
-import {X} from 'lucide-react';
+import {Calendar, X} from 'lucide-react';
 import {motion, AnimatePresence} from 'motion/react';
 import {useApp} from '@/src/context/AppContext';
 import {TRANSACTION_CATEGORIES} from '@/src/types';
 import {cn} from '@/src/lib/utils';
 
-export default function AddTransactionSheet({open, onClose}: {open: boolean; onClose: () => void}) {
+export default function AddTransactionSheet({
+  open,
+  onClose,
+  initialType,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialType?: 'income' | 'expense';
+}) {
   const {addTransaction, profile} = useApp();
   const [type, setType] = React.useState<'income' | 'expense'>('expense');
   const [title, setTitle] = React.useState('');
   const [category, setCategory] = React.useState('Food');
+  const [customCategory, setCustomCategory] = React.useState('');
   const [amount, setAmount] = React.useState('');
   const [date, setDate] = React.useState(() => new Date().toISOString().slice(0, 10));
+  /** Optional local time (HH:mm); combined with date when saving. */
+  const [time, setTime] = React.useState('');
   const [err, setErr] = React.useState<string | null>(null);
+  const dateRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (!open) return;
@@ -20,9 +32,15 @@ export default function AddTransactionSheet({open, onClose}: {open: boolean; onC
     setTitle('');
     setAmount('');
     setDate(new Date().toISOString().slice(0, 10));
-    setType('expense');
+    setTime('');
+    setType(initialType ?? 'expense');
     setCategory('Food');
-  }, [open]);
+    setCustomCategory('');
+  }, [open, initialType]);
+
+  React.useEffect(() => {
+    if (type === 'income') setTime('');
+  }, [type]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -36,13 +54,22 @@ export default function AddTransactionSheet({open, onClose}: {open: boolean; onC
       setErr('Enter a valid amount.');
       return;
     }
-    const cat =
-      type === 'income'
-        ? 'Income'
-        : category === 'Income'
-          ? 'Other'
-          : category;
-    const iso = new Date(`${date}T12:00:00`).toISOString();
+    const cat = (() => {
+      if (type === 'income') return 'Income';
+      if (category === 'Other') return customCategory.trim() ? customCategory.trim() : 'Other';
+      if (category === 'Income') return 'Other';
+      return category;
+    })();
+
+    if (type === 'expense' && category === 'Other' && !customCategory.trim()) {
+      setErr('Please enter a category name for “Other”.');
+      return;
+    }
+    const t = type === 'expense' ? time.trim() : '';
+    const iso =
+      t && /^\d{2}:\d{2}$/.test(t)
+        ? new Date(`${date}T${t}:00`).toISOString()
+        : new Date(`${date}T12:00:00`).toISOString();
     addTransaction({
       title: title.trim(),
       category: cat,
@@ -54,6 +81,24 @@ export default function AddTransactionSheet({open, onClose}: {open: boolean; onC
   }
 
   const expenseCats = TRANSACTION_CATEGORIES.filter((c) => c.id !== 'Income');
+
+  function openDatePicker() {
+    const el = dateRef.current;
+    if (!el) return;
+    // Mobile browsers / WebView: showPicker when available.
+    try {
+      (el as HTMLInputElement & {showPicker?: () => void}).showPicker?.();
+    } catch {
+      // ignore
+    }
+    // Fallbacks
+    try {
+      el.focus();
+      el.click();
+    } catch {
+      // ignore
+    }
+  }
 
   return (
     <AnimatePresence>
@@ -133,6 +178,14 @@ export default function AddTransactionSheet({open, onClose}: {open: boolean; onC
                         </option>
                       ))}
                     </select>
+                    {category === 'Other' && (
+                      <input
+                        value={customCategory}
+                        onChange={(e) => setCustomCategory(e.target.value)}
+                        className={cn(inputClass, 'mt-2')}
+                        placeholder="Write your category (e.g. Gift, Repair, Education)"
+                      />
+                    )}
                   </div>
                 )}
                 <div className="space-y-1.5">
@@ -147,8 +200,46 @@ export default function AddTransactionSheet({open, onClose}: {open: boolean; onC
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">Date</label>
-                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputClass} />
+                  <div className="relative">
+                    <input
+                      ref={dateRef}
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className={cn(
+                        inputClass,
+                        'pr-14',
+                        '[&::-webkit-calendar-picker-indicator]:hidden',
+                        '[&::-moz-calendar-picker-indicator]:hidden',
+                      )}
+                    />
+                    <button
+                      type="button"
+                      onClick={openDatePicker}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full p-2.5 text-on-surface-variant hover:bg-surface-container-high touch-manipulation"
+                      aria-label="Pick date"
+                    >
+                      <Calendar className="h-6 w-6" />
+                    </button>
+                  </div>
                 </div>
+                {type === 'expense' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">
+                      Time of expense{' '}
+                      <span className="font-normal normal-case text-on-surface-variant/80">(optional)</span>
+                    </label>
+                    <input
+                      type="time"
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                      className={inputClass}
+                    />
+                    <p className="text-[11px] text-on-surface-variant">
+                      Add if you know when you paid; leave blank to use midday for ordering in the list.
+                    </p>
+                  </div>
+                )}
                 {err && <p className="text-sm text-error">{err}</p>}
                 <button
                   type="submit"

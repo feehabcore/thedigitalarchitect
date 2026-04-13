@@ -1,5 +1,6 @@
 import * as React from 'react';
 import {Fragment} from 'react';
+import {FileDown} from 'lucide-react';
 import {motion} from 'motion/react';
 import {ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, Cell, PieChart, Pie} from 'recharts';
 import {cn} from '@/src/lib/utils';
@@ -111,10 +112,10 @@ export default function Analytics() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-2">
-              <div className="text-center">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">This month</p>
-                <p className="text-lg font-headline font-bold">{formatMoney(expense, cc)}</p>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="rounded-2xl bg-background/30 px-4 py-2 text-center backdrop-blur-sm ring-1 ring-white/5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant leading-tight">This month</p>
+                <p className="mt-0.5 text-lg font-headline font-bold leading-tight">{formatMoney(expense, cc)}</p>
               </div>
             </div>
             <div className="mt-4 grid w-full max-w-sm grid-cols-2 gap-2 text-xs">
@@ -148,11 +149,23 @@ export default function Analytics() {
         )}
       </div>
 
-      <div className="rounded-2xl border border-white/5 bg-surface-container-low p-4">
+      <div className="rounded-2xl border border-white/5 bg-surface-container-low p-4 space-y-3">
         <p className="text-sm text-on-surface-variant leading-relaxed">
           All charts use your logged transactions in <span className="font-semibold text-on-surface">{cc}</span>. Lifetime
           expenses: <span className="font-semibold text-on-surface">{formatMoney(sumExpense(transactions), cc)}</span>.
         </p>
+        <button
+          type="button"
+          onClick={() =>
+            void import('@/src/lib/statementPdf').then(({downloadTransactionStatementPdf}) =>
+              downloadTransactionStatementPdf(profile!, transactions, 'this_month'),
+            )
+          }
+          className="inline-flex w-full touch-manipulation items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container-high/50 py-2.5 text-sm font-bold text-on-surface"
+        >
+          <FileDown className="h-4 w-4 text-primary" />
+          Download PDF statement (this month)
+        </button>
       </div>
     </motion.div>
   );

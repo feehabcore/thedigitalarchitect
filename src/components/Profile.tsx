@@ -5,11 +5,21 @@ import {cn} from '@/src/lib/utils';
 import {useApp} from '@/src/context/AppContext';
 import {COUNTRIES, formatMoney} from '@/src/lib/currencies';
 import {netBalance} from '@/src/lib/stats';
-import type {ThemePreference} from '@/src/types';
+import type {NotificationPrefs, ThemePreference} from '@/src/types';
 import {fileToAvatarDataUrl} from '@/src/lib/image';
 
 export default function Profile({onOpenTransactions}: {onOpenTransactions: () => void}) {
-  const {profile, transactions, updateProfile, resetAccount, themePreference, setThemePreference} = useApp();
+  const {
+    profile,
+    transactions,
+    updateProfile,
+    resetAccount,
+    themePreference,
+    setThemePreference,
+    notificationPrefs,
+    setNotificationPrefs,
+    requestSystemNotificationPermission,
+  } = useApp();
   const p = profile!;
   const cc = p.currencyCode;
   const balance = netBalance(transactions);
@@ -77,6 +87,18 @@ export default function Profile({onOpenTransactions}: {onOpenTransactions: () =>
           <div className="flex items-center gap-2">
             <User className="h-5 w-5 shrink-0 text-primary" />
             <h2 className="truncate text-2xl font-bold font-headline tracking-tight">{p.name}</h2>
+          </div>
+          <div className="mt-3 space-y-1.5">
+            <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant" htmlFor="profile-nickname">
+              Nickname
+            </label>
+                       <input
+              id="profile-nickname"
+              value={p.nickname ?? ''}
+              onChange={(e) => updateProfile({nickname: e.target.value || undefined})}
+              className="w-full rounded-xl bg-surface-container-highest/60 border border-outline-variant/30 px-3 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+              autoComplete="nickname"
+            />
           </div>
           <p className="mt-1 text-sm text-on-surface-variant">{p.occupation}</p>
           <p className="mt-3 text-xs text-on-surface-variant">
@@ -156,7 +178,11 @@ export default function Profile({onOpenTransactions}: {onOpenTransactions: () =>
             </div>
           </div>
 
-          <SettingsRow icon={Bell} title="Notifications" subtitle="Coming soon" right={<ChevronRight className="h-5 w-5 text-on-surface-variant" />} />
+          <NotificationsSettings
+            notificationPrefs={notificationPrefs}
+            setNotificationPrefs={setNotificationPrefs}
+            requestSystemNotificationPermission={requestSystemNotificationPermission}
+          />
           <SettingsRow icon={ShieldCheck} title="Security" subtitle="On-device only (local storage)" right={<ChevronRight className="h-5 w-5 text-on-surface-variant" />} />
         </div>
       </section>
@@ -195,6 +221,18 @@ export default function Profile({onOpenTransactions}: {onOpenTransactions: () =>
           </button>
         </div>
       </section>
+
+      <p className="pb-2 text-center text-[11px] text-on-surface-variant/70">
+        Developed by{' '}
+        <a
+          href="https://feehab.dev"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold text-primary underline-offset-2 hover:underline"
+        >
+          Yeomun Hasan
+        </a>
+      </p>
     </motion.div>
   );
 }
@@ -223,6 +261,107 @@ function ThemeSegment({value, onChange}: {value: ThemePreference; onChange: (t: 
           {label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function NotificationsSettings({
+  notificationPrefs,
+  setNotificationPrefs,
+  requestSystemNotificationPermission,
+}: {
+  notificationPrefs: NotificationPrefs;
+  setNotificationPrefs: (p: Partial<NotificationPrefs>) => void;
+  requestSystemNotificationPermission: () => Promise<'granted' | 'denied' | 'unsupported'>;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [note, setNote] = React.useState<string | null>(null);
+
+  async function onDeviceToggle(next: boolean) {
+    setNote(null);
+    if (!next) {
+      setNotificationPrefs({browserPush: false});
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await requestSystemNotificationPermission();
+      if (r === 'unsupported') setNote('System notifications are not available in this environment.');
+      else if (r === 'denied') setNote('Permission denied — alerts will stay in the app only.');
+      else setNotificationPrefs({browserPush: true});
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="p-4">
+      <div className="flex items-start gap-4">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-surface-container-highest text-primary">
+          <Bell className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1 space-y-4">
+          <div>
+            <p className="font-semibold text-on-surface">Notifications & alerts</p>
+            <p className="text-sm text-on-surface-variant">
+              Budget uses your monthly salary from profile. Weekly savings uses your monthly savings target ÷ 4.
+            </p>
+          </div>
+
+          <label className="flex cursor-pointer items-center justify-between gap-3 touch-manipulation">
+            <span className="text-sm font-medium text-on-surface">Budget alert (in app)</span>
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-primary"
+              checked={notificationPrefs.budgetAlert}
+              onChange={(e) => setNotificationPrefs({budgetAlert: e.target.checked})}
+            />
+          </label>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+              <span>Budget threshold</span>
+              <span className="text-primary">{notificationPrefs.budgetPercentOfSalary}% of salary</span>
+            </div>
+            <input
+              type="range"
+              min={50}
+              max={150}
+              step={5}
+              value={notificationPrefs.budgetPercentOfSalary}
+              onChange={(e) => setNotificationPrefs({budgetPercentOfSalary: Number(e.target.value)})}
+              className="w-full accent-primary"
+            />
+          </div>
+
+          <label className="flex cursor-pointer items-center justify-between gap-3 touch-manipulation">
+            <span className="text-sm font-medium text-on-surface">Weekly savings pace (Thu–Sun)</span>
+            <input
+              type="checkbox"
+              className="h-5 w-5 accent-primary"
+              checked={notificationPrefs.weeklySavingsAlert}
+              onChange={(e) => setNotificationPrefs({weeklySavingsAlert: e.target.checked})}
+            />
+          </label>
+
+          <div className="rounded-xl border border-outline-variant/20 bg-surface-container-highest/40 p-3 space-y-3">
+            <label className="flex cursor-pointer items-center justify-between gap-3 touch-manipulation">
+              <span className="text-sm font-medium text-on-surface">Phone notifications</span>
+              <input
+                type="checkbox"
+                className="h-5 w-5 accent-primary"
+                disabled={busy}
+                checked={notificationPrefs.browserPush}
+                onChange={(e) => void onDeviceToggle(e.target.checked)}
+              />
+            </label>
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">
+              Turn this on to allow the app to request notification permission on your phone. We send at most one nudge per alert per period while you use the app.
+            </p>
+            {note && <p className="text-xs text-error">{note}</p>}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -15,6 +15,26 @@ export type Screen = 'home' | 'analytics' | 'savings' | 'profile' | 'transaction
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
+/** Local alerts + optional browser notifications (budget vs salary %, weekly savings pace). */
+export interface NotificationPrefs {
+  /** When granted, fire system notifications for enabled alert types (deduped per period in-session). */
+  browserPush: boolean;
+  budgetAlert: boolean;
+  /** Alert when this month’s expenses reach this percent of monthly salary (e.g. 80). */
+  budgetPercentOfSalary: number;
+  weeklySavingsAlert: boolean;
+  /** Alert when a month ends and the full statement is ready to download. */
+  monthlyStatementAlert: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  browserPush: false,
+  budgetAlert: true,
+  budgetPercentOfSalary: 80,
+  weeklySavingsAlert: true,
+  monthlyStatementAlert: true,
+};
+
 export interface Transaction {
   id: string;
   title: string;
@@ -35,6 +55,8 @@ export interface CategoryBreakdown {
 
 export interface UserProfile {
   name: string;
+  /** Used in sir/mam greetings; falls back to first name if missing (legacy). */
+  nickname?: string;
   occupation: string;
   /** Gross monthly salary in selected currency */
   monthlySalary: number;
@@ -43,7 +65,9 @@ export interface UserProfile {
   /** Optional savings target per month (same currency) */
   monthlySavingsTarget: number;
   onboardingCompletedAt: string;
-  /** JPEG data URL from onboarding / profile (optional) */
+  /** Shapes home greeting (e.g. “…, Name sir/mam”). Omitted on legacy profiles. */
+  gender?: 'male' | 'female';
+  /** JPEG data URL from onboarding / profile */
   avatarDataUrl?: string | null;
 }
 
@@ -52,6 +76,23 @@ export interface SavingsGoal {
   label: string;
   targetAmount: number;
   savedAmount: number;
+}
+
+export type DebtDirection = 'borrowed' | 'lent';
+export type DebtStatus = 'open' | 'paid';
+
+export interface Debt {
+  id: string;
+  direction: DebtDirection;
+  counterparty: string;
+  amount: number;
+  /** ISO 8601 date string */
+  createdAt: string;
+  /** ISO 8601 date string */
+  dueDate: string;
+  note?: string;
+  status: DebtStatus;
+  paidAt?: string | null;
 }
 
 export const TRANSACTION_CATEGORIES: {id: string; label: string; icon: LucideIcon}[] = [

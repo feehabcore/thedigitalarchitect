@@ -1,27 +1,52 @@
 import * as React from 'react';
 import {Fragment} from 'react';
-import {ArrowDownLeft, ArrowUpRight, TrendingDown, TrendingUp} from 'lucide-react';
+import {ArrowDownLeft, ArrowUpRight, Bell, TrendingDown, TrendingUp, X} from 'lucide-react';
 import {motion} from 'motion/react';
 import {cn} from '@/src/lib/utils';
 import {useApp} from '@/src/context/AppContext';
 import {formatMoney} from '@/src/lib/currencies';
 import {categoryMeta} from '@/src/types';
 import {flowThisMonth, lastFourWeeksBars, netBalance, savingsMovedThisWeek} from '@/src/lib/stats';
+import {buildHomeAlerts} from '@/src/lib/alertNotifications';
 
-function greeting(name: string) {
+function greeting(salutationName: string, gender?: 'male' | 'female') {
   const h = new Date().getHours();
   const base = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-  return `${base}, ${name.split(' ')[0]}`;
+  const honorific = gender === 'female' ? ' mam' : gender === 'male' ? ' sir' : '';
+  return `${base}, ${salutationName}${honorific}`;
+}
+
+function greetingSalutation(profile: {name: string; nickname?: string}) {
+  const n = profile.nickname?.trim();
+  if (n) return n;
+  return profile.name.split(' ')[0] || profile.name;
 }
 
 export default function Home({
   onAddIncomeExpense,
   onViewTransactions,
 }: {
-  onAddIncomeExpense: () => void;
+  onAddIncomeExpense: (type: 'income' | 'expense') => void;
   onViewTransactions: () => void;
 }) {
-  const {profile, transactions} = useApp();
+  const {profile, transactions, notificationPrefs, debts} = useApp();
+  const [dismissTick, setDismissTick] = React.useState(0);
+
+  const homeAlerts = React.useMemo(() => {
+    void dismissTick;
+    return buildHomeAlerts(profile!, transactions, notificationPrefs, debts).filter(
+      (a) => localStorage.getItem(`tda_alert_dismiss_${a.id}`) !== '1',
+    );
+  }, [profile, transactions, notificationPrefs, debts, dismissTick]);
+
+  function dismissAlert(id: string) {
+    try {
+      localStorage.setItem(`tda_alert_dismiss_${id}`, '1');
+    } catch {
+      /* ignore */
+    }
+    setDismissTick((n) => n + 1);
+  }
   const cc = profile!.currencyCode;
   const now = new Date();
   const balance = netBalance(transactions);
@@ -37,11 +62,13 @@ export default function Home({
     <motion.div initial={{opacity: 0, y: 12}} animate={{opacity: 1, y: 0}} className="space-y-6">
       <section className="space-y-3">
         <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">Overview</p>
-        <h1 className="text-2xl font-extrabold font-headline tracking-tight text-on-surface">{greeting(profile!.name)}</h1>
+        <h1 className="text-2xl font-extrabold font-headline tracking-tight text-on-surface">
+          {greeting(greetingSalutation(profile!), profile!.gender)}
+        </h1>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => onAddIncomeExpense()}
+            onClick={() => onAddIncomeExpense('income')}
             className="inline-flex touch-manipulation items-center gap-2 rounded-full bg-surface-container-high px-4 py-2.5 text-sm font-semibold text-on-surface"
           >
             <ArrowDownLeft className="h-4 w-4 text-primary" />
@@ -49,7 +76,7 @@ export default function Home({
           </button>
           <button
             type="button"
-            onClick={() => onAddIncomeExpense()}
+            onClick={() => onAddIncomeExpense('expense')}
             className="inline-flex touch-manipulation items-center gap-2 rounded-full bg-gradient-to-br from-primary to-secondary px-4 py-2.5 text-sm font-bold text-slate-950 shadow-md shadow-primary/15"
           >
             <ArrowUpRight className="h-4 w-4" />
@@ -57,6 +84,49 @@ export default function Home({
           </button>
         </div>
       </section>
+
+      {homeAlerts.length > 0 && (
+        <section className="space-y-3" aria-label="Alerts">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">Alerts</p>
+          <div className="space-y-2">
+            {homeAlerts.map((a) => (
+              <div
+                key={a.id}
+                className="relative flex gap-3 rounded-2xl border border-primary/25 bg-primary/10 p-4 pr-12 text-sm text-on-surface"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-primary">
+                  <Bell className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-headline font-bold text-on-surface">{a.title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">{a.message}</p>
+                  {a.action?.kind === 'download_statement_month' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void import('@/src/lib/statementPdf').then(({downloadMonthlyStatementPdf}) =>
+                          downloadMonthlyStatementPdf(profile!, transactions, a.action!.monthKey),
+                        );
+                      }}
+                      className="mt-2 inline-flex touch-manipulation items-center justify-center rounded-full bg-surface-container-high px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-primary"
+                    >
+                      {a.action.label}
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => dismissAlert(a.id)}
+                  className="absolute right-2 top-2 touch-manipulation rounded-full p-2 text-on-surface-variant hover:bg-surface-container-high"
+                  aria-label="Dismiss alert"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="rounded-2xl bg-gradient-to-br from-primary/20 via-secondary/10 to-transparent p-[1px]">
         <div className="wealth-glass glass-card relative overflow-hidden rounded-2xl p-5">

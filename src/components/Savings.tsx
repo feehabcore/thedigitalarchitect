@@ -1,12 +1,14 @@
 import * as React from 'react';
-import {PlusCircle, TrendingUp} from 'lucide-react';
+import {CheckCircle2, PlusCircle, TrendingUp, Trash2} from 'lucide-react';
 import {motion} from 'motion/react';
 import {useApp} from '@/src/context/AppContext';
 import {formatMoney} from '@/src/lib/currencies';
 import {cn} from '@/src/lib/utils';
+import type {DebtDirection} from '@/src/types';
 
 export default function Savings() {
-  const {profile, savings, setDailySavingsAmount, addSavingsGoal, contributeToGoal, removeSavingsGoal} = useApp();
+  const {profile, savings, setDailySavingsAmount, addSavingsGoal, contributeToGoal, removeSavingsGoal, debts, addDebt, markDebtPaid, removeDebt} =
+    useApp();
   const cc = profile!.currencyCode;
   const {dailyAmount, goals} = savings;
 
@@ -25,6 +27,15 @@ export default function Savings() {
   const [gErr, setGErr] = React.useState<string | null>(null);
 
   const [contrib, setContrib] = React.useState<{id: string; value: string} | null>(null);
+
+  const openDebts = React.useMemo(() => debts.filter((d) => d.status === 'open'), [debts]);
+  const [debtOpen, setDebtOpen] = React.useState(false);
+  const [dDir, setDDir] = React.useState<DebtDirection>('borrowed');
+  const [dWho, setDWho] = React.useState('');
+  const [dAmount, setDAmount] = React.useState('');
+  const [dDue, setDDue] = React.useState(() => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+  const [dNote, setDNote] = React.useState('');
+  const [dErr, setDErr] = React.useState<string | null>(null);
 
   function submitGoal(e: React.FormEvent) {
     e.preventDefault();
@@ -51,6 +62,38 @@ export default function Savings() {
     if (!Number.isFinite(n) || n <= 0) return;
     contributeToGoal(contrib.id, n);
     setContrib(null);
+  }
+
+  function submitDebt(e: React.FormEvent) {
+    e.preventDefault();
+    setDErr(null);
+    const amt = parseFloat(dAmount.replace(/,/g, ''));
+    if (!dWho.trim()) {
+      setDErr('Enter a name (who).');
+      return;
+    }
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setDErr('Enter a valid amount.');
+      return;
+    }
+    if (!dDue) {
+      setDErr('Pick a due date.');
+      return;
+    }
+    const isoDue = new Date(`${dDue}T12:00:00`).toISOString();
+    addDebt({
+      direction: dDir,
+      counterparty: dWho.trim(),
+      amount: amt,
+      dueDate: isoDue,
+      note: dNote.trim() || undefined,
+    });
+    setDebtOpen(false);
+    setDWho('');
+    setDAmount('');
+    setDNote('');
+    setDDue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+    setDDir('borrowed');
   }
 
   return (
@@ -230,6 +273,96 @@ export default function Savings() {
           </div>
         </form>
       )}
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold uppercase tracking-widest text-on-surface-variant">Borrow & lend</h3>
+          <button
+            type="button"
+            onClick={() => setDebtOpen((v) => !v)}
+            className="touch-manipulation inline-flex items-center gap-2 rounded-full bg-surface-container-high px-3 py-2 text-xs font-bold"
+          >
+            <PlusCircle className="h-4 w-4 text-primary" />
+            Add
+          </button>
+        </div>
+
+        {debtOpen && (
+          <form onSubmit={submitDebt} className="glass-card space-y-3 rounded-2xl p-4">
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                {id: 'borrowed', label: 'Borrowed'},
+                {id: 'lent', label: 'Lent'},
+              ] as const).map((x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  onClick={() => setDDir(x.id)}
+                  className={cn(
+                    'touch-manipulation rounded-xl border px-3 py-2 text-xs font-bold transition-colors',
+                    dDir === x.id
+                      ? 'border-primary bg-primary/15 text-on-surface'
+                      : 'border-outline-variant/30 bg-surface-container-high/40 text-on-surface-variant hover:border-outline-variant/60',
+                  )}
+                >
+                  {x.label}
+                </button>
+              ))}
+            </div>
+            <input value={dWho} onChange={(e) => setDWho(e.target.value)} className={input} placeholder="Who? (name)" />
+            <input inputMode="decimal" value={dAmount} onChange={(e) => setDAmount(e.target.value)} className={input} placeholder="Amount" />
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold uppercase tracking-widest text-on-surface-variant">Due date</label>
+              <input type="date" value={dDue} onChange={(e) => setDDue(e.target.value)} className={input} />
+            </div>
+            <input value={dNote} onChange={(e) => setDNote(e.target.value)} className={input} placeholder="Note (optional)" />
+            {dErr && <p className="text-sm text-error">{dErr}</p>}
+            <button type="submit" className="w-full rounded-full bg-gradient-to-br from-primary to-secondary py-3 text-sm font-bold text-slate-950 touch-manipulation">
+              Save
+            </button>
+          </form>
+        )}
+
+        {openDebts.length === 0 ? (
+          <p className="text-sm text-on-surface-variant">No open loans. Add one to get due-date reminders.</p>
+        ) : (
+          <div className="space-y-3">
+            {openDebts.map((d) => (
+              <div key={d.id} className="glass-card rounded-2xl p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-headline font-bold">
+                      {d.direction === 'borrowed' ? 'Borrowed from' : 'Lent to'} {d.counterparty}
+                    </p>
+                    <p className="text-xs text-on-surface-variant">
+                      Due {new Date(d.dueDate).toLocaleDateString()} · {formatMoney(d.amount, cc)}
+                    </p>
+                    {d.note && <p className="mt-1 text-xs text-on-surface-variant">{d.note}</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => markDebtPaid(d.id)}
+                      className="touch-manipulation inline-flex items-center gap-2 rounded-full bg-surface-container-high px-3 py-2 text-xs font-bold text-on-surface"
+                    >
+                      <CheckCircle2 className="h-4 w-4 text-primary" />
+                      Paid
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeDebt(d.id)}
+                      className="touch-manipulation rounded-full bg-surface-container-high p-2 text-on-surface-variant hover:text-error"
+                      aria-label="Remove"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 }

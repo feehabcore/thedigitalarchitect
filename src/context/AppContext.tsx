@@ -1,17 +1,37 @@
 import * as React from 'react';
-import type {SavingsGoal, ThemePreference, Transaction, UserProfile} from '@/src/types';
+import type {Debt, NotificationPrefs, SavingsGoal, ThemePreference, Transaction, UserProfile} from '@/src/types';
+import {DEFAULT_NOTIFICATION_PREFS} from '@/src/types';
+import {requestSystemNotificationPermission, trySendSystemFinancialAlerts} from '@/src/lib/alertNotifications';
+import {currencyForCountry, DEFAULT_CURRENCY_CODE} from '@/src/lib/currencies';
 
 function normalizeTheme(x: unknown): ThemePreference {
   if (x === 'light' || x === 'dark' || x === 'system') return x;
   return 'system';
 }
-import {currencyForCountry, DEFAULT_CURRENCY_CODE} from '@/src/lib/currencies';
 
 const STORAGE_PROFILE = 'tda_profile_v1';
 const STORAGE_TX = 'tda_transactions_v1';
 const STORAGE_SAVINGS = 'tda_savings_v1';
 const STORAGE_DAILY = 'tda_daily_savings_v1';
 const STORAGE_THEME = 'tda_theme_v1';
+const STORAGE_NOTIFICATIONS = 'tda_notification_prefs_v1';
+const STORAGE_DEBTS = 'tda_debts_v1';
+
+function normalizeNotificationPrefs(raw: unknown): NotificationPrefs {
+  const d = DEFAULT_NOTIFICATION_PREFS;
+  if (!raw || typeof raw !== 'object') return {...d};
+  const o = raw as Record<string, unknown>;
+  const pctRaw = o.budgetPercentOfSalary;
+  const pct =
+    typeof pctRaw === 'number' && Number.isFinite(pctRaw) ? Math.min(150, Math.max(50, Math.round(pctRaw))) : d.budgetPercentOfSalary;
+  return {
+    browserPush: typeof o.browserPush === 'boolean' ? o.browserPush : d.browserPush,
+    budgetAlert: typeof o.budgetAlert === 'boolean' ? o.budgetAlert : d.budgetAlert,
+    budgetPercentOfSalary: pct,
+    weeklySavingsAlert: typeof o.weeklySavingsAlert === 'boolean' ? o.weeklySavingsAlert : d.weeklySavingsAlert,
+    monthlyStatementAlert: typeof o.monthlyStatementAlert === 'boolean' ? o.monthlyStatementAlert : d.monthlyStatementAlert,
+  };
+}
 
 function resolveTheme(pref: ThemePreference): 'light' | 'dark' {
   if (pref === 'light') return 'light';
@@ -35,22 +55,28 @@ interface AppState {
   profile: UserProfile | null;
   transactions: Transaction[];
   savings: SavingsPrefs;
+  debts: Debt[];
 }
 
 export type OnboardingInput = {
   name: string;
+  nickname: string;
   occupation: string;
   monthlySalary: number;
   countryCode: string;
+  gender: 'male' | 'female';
   /** If omitted, defaults to ~15% of salary */
   monthlySavingsTarget?: number;
-  /** JPEG data URL from camera/gallery (optional) */
-  avatarDataUrl?: string | null;
+  /** JPEG data URL from camera/gallery (required at signup) */
+  avatarDataUrl: string;
 };
 
 interface AppContextValue extends AppState {
   themePreference: ThemePreference;
   setThemePreference: (t: ThemePreference) => void;
+  notificationPrefs: NotificationPrefs;
+  setNotificationPrefs: (patch: Partial<NotificationPrefs>) => void;
+  requestSystemNotificationPermission: () => Promise<'granted' | 'denied' | 'unsupported'>;
   completeOnboarding: (p: OnboardingInput) => void;
   updateProfile: (patch: Partial<UserProfile>) => void;
   addTransaction: (t: Omit<Transaction, 'id'>) => void;
@@ -60,6 +86,9 @@ interface AppContextValue extends AppState {
   updateGoalProgress: (id: string, savedAmount: number) => void;
   removeSavingsGoal: (id: string) => void;
   contributeToGoal: (id: string, amount: number) => void;
+  addDebt: (d: Omit<Debt, 'id' | 'createdAt' | 'status' | 'paidAt'>) => void;
+  markDebtPaid: (id: string) => void;
+  removeDebt: (id: string) => void;
   resetAccount: () => void;
 }
 
@@ -92,6 +121,10 @@ export function AppProvider({children}: {children: React.ReactNode}) {
     const daily = loadJson<number>(STORAGE_DAILY, s.dailyAmount);
     return {...s, dailyAmount: daily};
   });
+  const [debts, setDebts] = React.useState<Debt[]>(() => loadJson(STORAGE_DEBTS, []));
+  const [notificationPrefs, setNotificationPrefsState] = React.useState<NotificationPrefs>(() =>
+    normalizeNotificationPrefs(loadJson(STORAGE_NOTIFICATIONS, null)),
+  );
 
   const setThemePreference = React.useCallback((t: ThemePreference) => {
     setThemePreferenceState(t);
@@ -117,6 +150,29 @@ export function AppProvider({children}: {children: React.ReactNode}) {
   React.useEffect(() => {
     saveJson(STORAGE_SAVINGS, savings);
   }, [savings]);
+  React.useEffect(() => {
+    saveJson(STORAGE_DEBTS, debts);
+  }, [debts]);
+  React.useEffect(() => {
+    saveJson(STORAGE_NOTIFICATIONS, notificationPrefs);
+  }, [notificationPrefs]);
+
+  React.useEffect(() => {
+    if (!profile) return;
+    trySendSystemFinancialAlerts(profile, transactions, notificationPrefs, debts);
+  }, [profile, transactions, notificationPrefs, debts]);
+
+  const setNotificationPrefs = React.useCallback((patch: Partial<NotificationPrefs>) => {
+    setNotificationPrefsState((prev) => ({...prev, ...patch}));
+  }, []);
+
+  const requestSystemNotificationPermissionCb = React.useCallback(async () => {
+    const result = await requestSystemNotificationPermission();
+    if (result === 'granted') {
+      setNotificationPrefsState((prev) => ({...prev, browserPush: true}));
+    }
+    return result;
+  }, []);
 
   const completeOnboarding = React.useCallback((p: OnboardingInput) => {
     const currencyCode = currencyForCountry(p.countryCode) || DEFAULT_CURRENCY_CODE;
@@ -126,13 +182,15 @@ export function AppProvider({children}: {children: React.ReactNode}) {
         : Math.max(0, Math.round(p.monthlySalary * 0.15));
     const next: UserProfile = {
       name: p.name.trim(),
+      nickname: p.nickname.trim(),
       occupation: p.occupation.trim(),
       monthlySalary: p.monthlySalary,
       countryCode: p.countryCode,
       currencyCode,
       monthlySavingsTarget,
       onboardingCompletedAt: new Date().toISOString(),
-      avatarDataUrl: p.avatarDataUrl ?? null,
+      gender: p.gender,
+      avatarDataUrl: p.avatarDataUrl,
     };
     setProfile(next);
   }, []);
@@ -192,14 +250,44 @@ export function AppProvider({children}: {children: React.ReactNode}) {
     }));
   }, []);
 
+  const addDebt = React.useCallback((d: Omit<Debt, 'id' | 'createdAt' | 'status' | 'paidAt'>) => {
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-debt`;
+    const nowIso = new Date().toISOString();
+    const next: Debt = {
+      id,
+      direction: d.direction,
+      counterparty: d.counterparty.trim(),
+      amount: d.amount,
+      createdAt: nowIso,
+      dueDate: d.dueDate,
+      note: d.note?.trim() || undefined,
+      status: 'open',
+      paidAt: null,
+    };
+    setDebts((prev) => [next, ...prev]);
+  }, []);
+
+  const markDebtPaid = React.useCallback((id: string) => {
+    const paidAt = new Date().toISOString();
+    setDebts((prev) => prev.map((d) => (d.id === id ? {...d, status: 'paid', paidAt} : d)));
+  }, []);
+
+  const removeDebt = React.useCallback((id: string) => {
+    setDebts((prev) => prev.filter((d) => d.id !== id));
+  }, []);
+
   const resetAccount = React.useCallback(() => {
     setProfile(null);
     setTransactions([]);
     setSavings({dailyAmount: 70, goals: []});
+    setDebts([]);
+    setNotificationPrefsState({...DEFAULT_NOTIFICATION_PREFS});
     localStorage.removeItem(STORAGE_PROFILE);
     localStorage.removeItem(STORAGE_TX);
     localStorage.removeItem(STORAGE_SAVINGS);
     localStorage.removeItem(STORAGE_DAILY);
+    localStorage.removeItem(STORAGE_NOTIFICATIONS);
+    localStorage.removeItem(STORAGE_DEBTS);
   }, []);
 
   const value = React.useMemo(
@@ -208,8 +296,12 @@ export function AppProvider({children}: {children: React.ReactNode}) {
         profile,
         transactions,
         savings,
+        debts,
         themePreference,
         setThemePreference,
+        notificationPrefs,
+        setNotificationPrefs,
+        requestSystemNotificationPermission: requestSystemNotificationPermissionCb,
         completeOnboarding,
         updateProfile,
         addTransaction,
@@ -219,14 +311,21 @@ export function AppProvider({children}: {children: React.ReactNode}) {
         updateGoalProgress,
         removeSavingsGoal,
         contributeToGoal,
+        addDebt,
+        markDebtPaid,
+        removeDebt,
         resetAccount,
       }) satisfies AppContextValue,
     [
       profile,
       transactions,
       savings,
+      debts,
       themePreference,
       setThemePreference,
+      notificationPrefs,
+      setNotificationPrefs,
+      requestSystemNotificationPermissionCb,
       completeOnboarding,
       updateProfile,
       addTransaction,
@@ -236,6 +335,9 @@ export function AppProvider({children}: {children: React.ReactNode}) {
       updateGoalProgress,
       removeSavingsGoal,
       contributeToGoal,
+      addDebt,
+      markDebtPaid,
+      removeDebt,
       resetAccount,
     ],
   );
